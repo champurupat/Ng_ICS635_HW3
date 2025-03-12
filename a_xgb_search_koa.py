@@ -8,33 +8,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import optuna
 import os
-import sys
-import datetime
 
-# Create a log file with timestamp
-timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-log_filename = f"xgboost_optuna_{timestamp}.log"
-
-# Create a class to capture print statements and write them to both console and log file
-class Logger:
-    def __init__(self, filename):
-        self.terminal = sys.stdout
-        self.log = open(filename, 'a')
-        
-    def write(self, message):
-        self.terminal.write(message)
-        self.log.write(message)
-        self.log.flush()  # Ensure log is written immediately
-        
-    def flush(self):
-        self.terminal.flush()
-        self.log.flush()
-
-# Redirect stdout to our Logger class
-sys.stdout = Logger(log_filename)
-
-print(f"Log file created: {log_filename}")
-print(f"Run started at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+# Note: To capture all terminal output to a log file, run this script using:
+# python a_xgb_search_koa.py | tee xgboost_optuna_run.log
 
 # Load the data
 print("Loading data...")
@@ -68,7 +44,7 @@ def objective(trial):
         'objective': 'binary:logistic',
         'eval_metric': 'auc',
         'random_state': 42,
-        # 'n_jobs': 16
+        'n_jobs': 16
     }
     
     # Initialize and train the XGBoost model
@@ -87,7 +63,7 @@ def objective(trial):
 # Perform Bayesian optimization with Optuna
 print("Starting Bayesian optimization with Optuna...")
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=100)  # Adjust n_trials as needed
+study.optimize(objective, n_trials=200)
 print("Bayesian optimization completed!")
 
 # Print the best parameters and score
@@ -100,12 +76,12 @@ best_params = study.best_params
 best_params['objective'] = 'binary:logistic'
 best_params['eval_metric'] = 'auc'
 best_params['random_state'] = 42
-# best_params['n_jobs'] = 16
+best_params['n_jobs'] = 16
 best_model = xgb.XGBClassifier(**best_params)
 best_model.fit(
     X_train_scaled, y_train,
     eval_set=[(X_val_scaled, y_val)],
-    verbose=True
+    verbose=False
 )
 
 # Evaluate on validation set
@@ -133,35 +109,9 @@ while os.path.exists(dir_name):
 os.makedirs(dir_name)
 results.to_csv(f'{dir_name}/xgboost_optuna_results.csv', index=False)
 
-# Plot the top 10 combinations
-plt.figure(figsize=(12, 6))
-sns.barplot(x='rank_test_score', y='mean_test_score', 
-            data=results.head(10))
-plt.title('Top 10 Parameter Combinations (AUC)')
-plt.xlabel('Rank')
-plt.ylabel('Validation AUC Score')
-
-# Zoom into regime where difference is visible based on min and max
-min_auc = results['mean_test_score'].min()
-max_auc = results['mean_test_score'].max()
-plt.ylim(min_auc - 0.01, max_auc + 0.01)
-
-plt.tight_layout()
-plt.savefig(f'{dir_name}/xgboost_optuna_results.png')
-
 # Save the best model
 best_model.save_model(f'{dir_name}/best_xgboost_model.json')
 
 print("\nResults have been saved to:")
 print("- xgboost_optuna_results.csv")
-print("- xgboost_optuna_results.png")
-print("- xgboost_feature_importance.png")
 print("- best_xgboost_model.json")
-# Print log file information
-print(f"\nAll output has been logged to: {log_filename}")
-print(f"Run completed at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-
-# Restore original stdout and close log file
-sys.stdout.log.close()
-sys.stdout = sys.stdout.terminal
-
